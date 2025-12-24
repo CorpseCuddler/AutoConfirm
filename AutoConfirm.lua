@@ -6,6 +6,7 @@ local frame = CreateFrame("Frame")
 local defaultSettings = {
     autoLoot = true,
     autoDelete = true,
+    autoDeleteQuestItems = true,
     autoEquipConfirm = true,
     autoEnchantReplace = true
 }
@@ -41,14 +42,21 @@ frame:RegisterEvent("EQUIP_BIND_CONFIRM")
 frame:RegisterEvent("AUTOEQUIP_BIND_CONFIRM")
 frame:RegisterEvent("ADDON_LOADED")
 
+local questDeletePopups = {
+    DELETE_QUEST_ITEM = true,
+    DELETE_QUEST_ITEM_CONFIRM = true
+}
+
 -- Auto-fill DELETE confirmation and click accept
-local function AutoFillDelete()
-    if not settings.autoDelete then return end
-    
+local function AutoFillDelete(which, isEnabled, confirmText)
+    if not isEnabled then
+        return
+    end
+
     if StaticPopup1EditBox and StaticPopup1EditBox:IsVisible() then
         local dialog = StaticPopup1
-        if dialog and dialog.which == "DELETE_GOOD_ITEM" then
-            StaticPopup1EditBox:SetText(DELETE_ITEM_CONFIRM_STRING)
+        if dialog and dialog.which == which then
+            StaticPopup1EditBox:SetText(confirmText)
             -- Small delay to ensure the text is set before clicking
             C_Timer.After(0.1, function()
                 if StaticPopup1Button1:IsEnabled() then
@@ -135,7 +143,10 @@ end)
 -- Hook into StaticPopup to auto-fill delete text and click
 hooksecurefunc("StaticPopup_Show", function(which)
     if which == "DELETE_GOOD_ITEM" then
-        AutoFillDelete()
+        AutoFillDelete(which, settings.autoDelete, DELETE_ITEM_CONFIRM_STRING)
+    elseif questDeletePopups[which] then
+        local confirmText = _G.DELETE_QUEST_ITEM_CONFIRM_STRING or _G.DELETE_ITEM_CONFIRM_STRING or "DELETE"
+        AutoFillDelete(which, settings.autoDeleteQuestItems, confirmText)
     else
         AutoConfirmStaticPopup(which)
     end
@@ -166,7 +177,8 @@ description:SetText("Configure automatic confirmations and deletions.")
 
 local lootCheckbox = CreateOptionCheckbox("AutoConfirmLootCheckbox", "Auto-confirm soulbound loot", "autoLoot", description, -12)
 local deleteCheckbox = CreateOptionCheckbox("AutoConfirmDeleteCheckbox", "Auto-fill DELETE confirmation", "autoDelete", lootCheckbox, -8)
-local equipCheckbox = CreateOptionCheckbox("AutoConfirmEquipCheckbox", "Auto-confirm equipment binding", "autoEquipConfirm", deleteCheckbox, -8)
+local questDeleteCheckbox = CreateOptionCheckbox("AutoConfirmQuestDeleteCheckbox", "Auto-delete quest items", "autoDeleteQuestItems", deleteCheckbox, -8)
+local equipCheckbox = CreateOptionCheckbox("AutoConfirmEquipCheckbox", "Auto-confirm equipment binding", "autoEquipConfirm", questDeleteCheckbox, -8)
 local enchantCheckbox = CreateOptionCheckbox("AutoConfirmEnchantCheckbox", "Auto-confirm enchant replacement", "autoEnchantReplace", equipCheckbox, -8)
 
 local function RefreshOptionsPanel()
@@ -176,6 +188,7 @@ local function RefreshOptionsPanel()
 
     lootCheckbox:SetChecked(settings.autoLoot)
     deleteCheckbox:SetChecked(settings.autoDelete)
+    questDeleteCheckbox:SetChecked(settings.autoDeleteQuestItems)
     equipCheckbox:SetChecked(settings.autoEquipConfirm)
     enchantCheckbox:SetChecked(settings.autoEnchantReplace)
 end
@@ -206,8 +219,10 @@ SlashCmdList["AUTOCONFIRM"] = function(msg)
         print("|cff00ff00AutoConfirm Status:|r")
         print("  Auto-loot BoP: " .. (settings.autoLoot and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Auto-delete: " .. (settings.autoDelete and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        print("  Auto-delete quest items: " .. (settings.autoDeleteQuestItems and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Auto-confirm equip: " .. (settings.autoEquipConfirm and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Auto-confirm enchant replace: " .. (settings.autoEnchantReplace and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        print("  Supported delete popups: DELETE_GOOD_ITEM, DELETE_QUEST_ITEM, DELETE_QUEST_ITEM_CONFIRM")
         print("  Supported equip popups: EQUIP_BIND, EQUIP_BIND_CONFIRM, AUTOEQUIP_BIND_CONFIRM")
         print("  Supported enchant popups: REPLACE_ENCHANT, CONFIRM_ENCHANT_REPLACE")
     else
