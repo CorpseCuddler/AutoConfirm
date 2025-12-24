@@ -6,8 +6,8 @@ local frame = CreateFrame("Frame")
 local defaultSettings = {
     autoLoot = true,
     autoDelete = true,
-    autoConfirmEquip = true,
-    autoConfirmEnchant = true
+    autoEquipConfirm = true,
+    autoEnchantReplace = true
 }
 
 local settings
@@ -23,11 +23,22 @@ local function InitializeSavedVariables()
         end
     end
 
+    if AutoConfirmDB.autoEquipConfirm == nil and AutoConfirmDB.autoConfirmEquip ~= nil then
+        AutoConfirmDB.autoEquipConfirm = AutoConfirmDB.autoConfirmEquip
+    end
+
+    if AutoConfirmDB.autoEnchantReplace == nil and AutoConfirmDB.autoConfirmEnchant ~= nil then
+        AutoConfirmDB.autoEnchantReplace = AutoConfirmDB.autoConfirmEnchant
+    end
+
     settings = AutoConfirmDB
 end
 
 -- Auto-confirm soulbound item loots
 frame:RegisterEvent("LOOT_BIND_CONFIRM")
+frame:RegisterEvent("CONFIRM_ENCHANT_REPLACE")
+frame:RegisterEvent("EQUIP_BIND_CONFIRM")
+frame:RegisterEvent("AUTOEQUIP_BIND_CONFIRM")
 frame:RegisterEvent("ADDON_LOADED")
 
 -- Auto-fill DELETE confirmation and click accept
@@ -49,17 +60,52 @@ local function AutoFillDelete()
 end
 
 local function AutoConfirmStaticPopup(which)
-    if which == "EQUIP_BIND" then
-        if settings.autoConfirmEquip and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
+    if which == "EQUIP_BIND" or which == "EQUIP_BIND_CONFIRM" or which == "AUTOEQUIP_BIND_CONFIRM" then
+        if settings.autoEquipConfirm and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
             StaticPopup1Button1:Click()
         end
         return
     end
 
-    if which == "REPLACE_ENCHANT" then
-        if settings.autoConfirmEnchant and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
+    if which == "REPLACE_ENCHANT" or which == "CONFIRM_ENCHANT_REPLACE" then
+        if settings.autoEnchantReplace and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
             StaticPopup1Button1:Click()
         end
+    end
+end
+
+local function AutoConfirmEnchantReplace()
+    if not settings.autoEnchantReplace then
+        return
+    end
+
+    if ConfirmEnchantReplace then
+        ConfirmEnchantReplace()
+        return
+    end
+
+    if StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
+        StaticPopup1Button1:Click()
+    end
+end
+
+local function AutoConfirmEquipBind(...)
+    if not settings.autoEquipConfirm then
+        return
+    end
+
+    if ConfirmEquipBind then
+        ConfirmEquipBind(...)
+        return
+    end
+
+    if ConfirmBindOnUse then
+        ConfirmBindOnUse(...)
+        return
+    end
+
+    if StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
+        StaticPopup1Button1:Click()
     end
 end
 
@@ -77,6 +123,12 @@ frame:SetScript("OnEvent", function(self, event, ...)
             local slot = ...
             ConfirmLootSlot(slot)
         end
+    elseif event == "CONFIRM_ENCHANT_REPLACE" then
+        AutoConfirmEnchantReplace()
+    elseif event == "EQUIP_BIND_CONFIRM" then
+        AutoConfirmEquipBind(...)
+    elseif event == "AUTOEQUIP_BIND_CONFIRM" then
+        AutoConfirmEquipBind(...)
     end
 end)
 
@@ -114,8 +166,8 @@ description:SetText("Configure automatic confirmations and deletions.")
 
 local lootCheckbox = CreateOptionCheckbox("AutoConfirmLootCheckbox", "Auto-confirm soulbound loot", "autoLoot", description, -12)
 local deleteCheckbox = CreateOptionCheckbox("AutoConfirmDeleteCheckbox", "Auto-fill DELETE confirmation", "autoDelete", lootCheckbox, -8)
-local equipCheckbox = CreateOptionCheckbox("AutoConfirmEquipCheckbox", "Auto-confirm equipment binding", "autoConfirmEquip", deleteCheckbox, -8)
-local enchantCheckbox = CreateOptionCheckbox("AutoConfirmEnchantCheckbox", "Auto-confirm enchant replacement", "autoConfirmEnchant", equipCheckbox, -8)
+local equipCheckbox = CreateOptionCheckbox("AutoConfirmEquipCheckbox", "Auto-confirm equipment binding", "autoEquipConfirm", deleteCheckbox, -8)
+local enchantCheckbox = CreateOptionCheckbox("AutoConfirmEnchantCheckbox", "Auto-confirm enchant replacement", "autoEnchantReplace", equipCheckbox, -8)
 
 local function RefreshOptionsPanel()
     if not settings then
@@ -124,8 +176,8 @@ local function RefreshOptionsPanel()
 
     lootCheckbox:SetChecked(settings.autoLoot)
     deleteCheckbox:SetChecked(settings.autoDelete)
-    equipCheckbox:SetChecked(settings.autoConfirmEquip)
-    enchantCheckbox:SetChecked(settings.autoConfirmEnchant)
+    equipCheckbox:SetChecked(settings.autoEquipConfirm)
+    enchantCheckbox:SetChecked(settings.autoEnchantReplace)
 end
 
 optionsPanel:SetScript("OnShow", RefreshOptionsPanel)
@@ -145,17 +197,19 @@ SlashCmdList["AUTOCONFIRM"] = function(msg)
         settings.autoDelete = not settings.autoDelete
         print("|cff00ff00AutoConfirm:|r Auto-delete: " .. (settings.autoDelete and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
     elseif msg == "equip" then
-        settings.autoConfirmEquip = not settings.autoConfirmEquip
-        print("|cff00ff00AutoConfirm:|r Auto-confirm equip: " .. (settings.autoConfirmEquip and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        settings.autoEquipConfirm = not settings.autoEquipConfirm
+        print("|cff00ff00AutoConfirm:|r Auto-confirm equip: " .. (settings.autoEquipConfirm and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
     elseif msg == "enchant" then
-        settings.autoConfirmEnchant = not settings.autoConfirmEnchant
-        print("|cff00ff00AutoConfirm:|r Auto-confirm enchant replace: " .. (settings.autoConfirmEnchant and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        settings.autoEnchantReplace = not settings.autoEnchantReplace
+        print("|cff00ff00AutoConfirm:|r Auto-confirm enchant replace: " .. (settings.autoEnchantReplace and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
     elseif msg == "status" then
         print("|cff00ff00AutoConfirm Status:|r")
         print("  Auto-loot BoP: " .. (settings.autoLoot and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Auto-delete: " .. (settings.autoDelete and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-        print("  Auto-confirm equip: " .. (settings.autoConfirmEquip and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-        print("  Auto-confirm enchant replace: " .. (settings.autoConfirmEnchant and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        print("  Auto-confirm equip: " .. (settings.autoEquipConfirm and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        print("  Auto-confirm enchant replace: " .. (settings.autoEnchantReplace and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+        print("  Supported equip popups: EQUIP_BIND, EQUIP_BIND_CONFIRM, AUTOEQUIP_BIND_CONFIRM")
+        print("  Supported enchant popups: REPLACE_ENCHANT, CONFIRM_ENCHANT_REPLACE")
     else
         print("|cff00ff00AutoConfirm Commands:|r")
         print("  /ac loot - Toggle auto-confirm BoP loot")
