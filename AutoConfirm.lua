@@ -245,7 +245,12 @@ optionsPanel.name = "AutoConfirm"
 local function CreateOptionCheckbox(name, label, settingKey, anchor, offsetY)
     local checkbox = CreateFrame("CheckButton", name, optionsPanel, "InterfaceOptionsCheckButtonTemplate")
     checkbox:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, offsetY)
-    checkbox.Text:SetText(label)
+    local labelRegion = _G[name .. "Text"] or checkbox.Text or checkbox.text
+    if not labelRegion then
+        labelRegion = checkbox:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        labelRegion:SetPoint("LEFT", checkbox, "RIGHT", 0, 0)
+    end
+    labelRegion:SetText(label)
 
     checkbox:SetScript("OnClick", function(self)
         settings[settingKey] = self:GetChecked() and true or false
