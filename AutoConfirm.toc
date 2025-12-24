@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: AutoConfirm
+## Notes: Auto-confirms soulbound loot and fills DELETE confirmation /ac for help
+## Author: CorpseCuddler
+## Version: 1.0
+
+AutoConfirm.lua
