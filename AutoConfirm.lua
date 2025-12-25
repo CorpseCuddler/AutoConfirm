@@ -294,6 +294,7 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         return
     end
 
+    -- Quest automation (split toggles)
     if event == "QUEST_DETAIL" then
         AutoQuest_Accept()
         return
@@ -308,17 +309,11 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         return
     end
 
-	if event == "LOOT_BIND_CONFIRM" then
-		if settings and settings.autoLoot then
-			local slot = arg1
-			if ConfirmLootSlot and slot then
-				ConfirmLootSlot(slot)
-			end
-		end
-		return
-	end
-
-
+    -- Loot bind confirm
+    if event == "LOOT_BIND_CONFIRM" then
+        if settings.autoLoot and ConfirmLootSlot and arg1 then
+            ConfirmLootSlot(arg1)
+        end
         return
     elseif event == "CONFIRM_ENCHANT_REPLACE" then
         AutoConfirmEnchantReplace()
@@ -334,23 +329,24 @@ end)
 
 
 
+
 -- Hook into StaticPopup to auto-fill delete text and click
 local lastPartyInviter
 
 hooksecurefunc("StaticPopup_Show", function(which, text_arg1, text_arg2, data)
+    if not settings then
+        return
+    end
+
+    -- BoP loot popup: confirm only (do NOT click buttons; do NOT call LootSlot)
     if which == "LOOT_BIND" then
-		if settings and settings.autoLoot then
-			-- data is often the loot slot
-			if type(data) == "number" and ConfirmLootSlot then
-				ConfirmLootSlot(data)
-			end
-		end
-		return
-	end
+        if settings.autoLoot and ConfirmLootSlot and type(data) == "number" then
+            ConfirmLootSlot(data)
+        end
+        return
+    end
 
-
-
-
+    -- Delete typing/click
     if which == "DELETE_GOOD_ITEM" then
         AutoFillDelete(which, settings.autoDelete, DELETE_ITEM_CONFIRM_STRING)
         return
@@ -362,13 +358,10 @@ hooksecurefunc("StaticPopup_Show", function(which, text_arg1, text_arg2, data)
         return
     end
 
-    if which == "PARTY_INVITE" then
-        AutoConfirmStaticPopup(which)
-        return
-    end
-
+    -- Everything else (equip/enchant/abandon/party invite)
     AutoConfirmStaticPopup(which)
 end)
+
 
 
 local optionsPanel = CreateFrame("Frame", "AutoConfirmOptions", UIParent)
