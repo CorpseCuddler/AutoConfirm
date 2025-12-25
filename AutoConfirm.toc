@@ -2,7 +2,7 @@
 ## Title: AutoConfirm
 ## Notes: Auto-confirms soulbound loot and fills DELETE confirmation /ac for help
 ## Author: CorpseCuddler
-## Version: 1.0
+## Version: 1.3
 ## SavedVariables: AutoConfirmDB
 
 AutoConfirm.lua
