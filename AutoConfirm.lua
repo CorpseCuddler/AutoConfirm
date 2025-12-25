@@ -1,6 +1,8 @@
 -- AutoConfirm.lua
 local addonName = "AutoConfirm"
 local frame = CreateFrame("Frame")
+local _autoLootInProgress = false
+
 -- Settings
 local defaultSettings = {
     autoLoot = false,
@@ -306,12 +308,17 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
         return
     end
 
-    if event == "LOOT_BIND_CONFIRM" then
-        if settings.autoLoot then
-            local slot = arg1
-            if ConfirmLootSlot and slot then ConfirmLootSlot(slot) end
-            if LootSlot and slot then LootSlot(slot) end
-        end
+	if event == "LOOT_BIND_CONFIRM" then
+		if settings and settings.autoLoot then
+			local slot = arg1
+			if ConfirmLootSlot and slot then
+				ConfirmLootSlot(slot)
+			end
+		end
+		return
+	end
+
+
         return
     elseif event == "CONFIRM_ENCHANT_REPLACE" then
         AutoConfirmEnchantReplace()
@@ -332,22 +339,16 @@ local lastPartyInviter
 
 hooksecurefunc("StaticPopup_Show", function(which, text_arg1, text_arg2, data)
     if which == "LOOT_BIND" then
-        if settings and settings.autoLoot then
-            -- On some clients, 'data' is the loot slot index. Confirm if available.
-            if type(data) == "number" and ConfirmLootSlot then
-                ConfirmLootSlot(data)
-            end
+		if settings and settings.autoLoot then
+			-- data is often the loot slot
+			if type(data) == "number" and ConfirmLootSlot then
+				ConfirmLootSlot(data)
+			end
+		end
+		return
+	end
 
-            -- Click the OK button on whatever StaticPopup is showing LOOT_BIND
-            local f = CreateFrame("Frame")
-			f:SetScript("OnUpdate", function(self)
-				self:SetScript("OnUpdate", nil)
-				self:Hide()
-				ClickPopupAccept("LOOT_BIND")
-			end)
-        end
-        return
-    end
+
 
 
     if which == "DELETE_GOOD_ITEM" then
