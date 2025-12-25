@@ -1,7 +1,9 @@
 -- AutoConfirm.lua
 local addonName = "AutoConfirm"
 local frame = CreateFrame("Frame")
-local _autoLootInProgress = false
+local _autoLootRunning = false
+local _autoLootQueued = false
+
 
 -- Settings
 local defaultSettings = {
@@ -46,6 +48,8 @@ frame:RegisterEvent("QUEST_DETAIL")
 frame:RegisterEvent("QUEST_PROGRESS")
 frame:RegisterEvent("QUEST_COMPLETE")
 frame:RegisterEvent("GOSSIP_SHOW")
+frame:RegisterEvent("LOOT_OPENED")
+
 
 
 
@@ -241,6 +245,15 @@ local function AutoQuest_Progress()
     end
 end
 
+local function HidePopupByWhich(which)
+    for i = 1, 4 do
+        local dlg = _G["StaticPopup" .. i]
+        if dlg and dlg:IsShown() and dlg.which == which then
+            dlg:Hide()
+        end
+    end
+end
+
 local function AutoQuest_Complete()
     if not settings.autoQuestTurnIn then return end
 
@@ -311,8 +324,34 @@ frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
 
     -- Loot bind confirm
     if event == "LOOT_BIND_CONFIRM" then
-        if settings.autoLoot and ConfirmLootSlot and arg1 then
-            ConfirmLootSlot(arg1)
+        if settings.autoLoot then
+            local slot = arg1
+            if ConfirmLootSlot and slot then
+                ConfirmLootSlot(slot)
+            end
+            if StaticPopup_Hide then
+                StaticPopup_Hide("LOOT_BIND")
+            end
+            _autoLootQueued = true
+        end
+        return
+    elseif event == "LOOT_OPENED" then
+        if settings.autoLoot and not _autoLootRunning then
+            _autoLootRunning = true
+
+            if _autoLootQueued then
+                _autoLootQueued = false
+
+                local numItems = GetNumLootItems and GetNumLootItems() or 0
+                for i = 1, numItems do
+                    local _, _, _, _, locked = GetLootSlotInfo(i)
+                    if not locked then
+                        LootSlot(i)
+                    end
+                end
+            end
+
+            _autoLootRunning = false
         end
         return
     elseif event == "CONFIRM_ENCHANT_REPLACE" then
@@ -330,6 +369,7 @@ end)
 
 
 
+
 -- Hook into StaticPopup to auto-fill delete text and click
 local lastPartyInviter
 
@@ -338,15 +378,6 @@ hooksecurefunc("StaticPopup_Show", function(which, text_arg1, text_arg2, data)
         return
     end
 
-    -- BoP loot popup: confirm only (do NOT click buttons; do NOT call LootSlot)
-    if which == "LOOT_BIND" then
-        if settings.autoLoot and ConfirmLootSlot and type(data) == "number" then
-            ConfirmLootSlot(data)
-        end
-        return
-    end
-
-    -- Delete typing/click
     if which == "DELETE_GOOD_ITEM" then
         AutoFillDelete(which, settings.autoDelete, DELETE_ITEM_CONFIRM_STRING)
         return
@@ -358,9 +389,9 @@ hooksecurefunc("StaticPopup_Show", function(which, text_arg1, text_arg2, data)
         return
     end
 
-    -- Everything else (equip/enchant/abandon/party invite)
     AutoConfirmStaticPopup(which)
 end)
+
 
 
 
@@ -392,8 +423,8 @@ local lootCheckbox = CreateOptionCheckbox("AutoConfirmLootCheckbox", "Auto-confi
 local abandonQuestCheckbox = CreateOptionCheckbox("AutoConfirmAbandonQuestCheckbox", "Auto-confirm abandon quest", "autoAbandonQuest", lootCheckbox, -8)
 local questAcceptCheckbox = CreateOptionCheckbox("AutoConfirmQuestAcceptCheckbox", "Auto-accept quests", "autoQuestAccept", abandonQuestCheckbox, -8)
 local questTurnInCheckbox = CreateOptionCheckbox("AutoConfirmQuestTurnInCheckbox", "Auto-complete/turn-in quests", "autoQuestTurnIn", questAcceptCheckbox, -8)
+local deleteCheckbox = CreateOptionCheckbox("AutoConfirmDeleteCheckbox", "Auto-fill DELETE confirmation", "autoDelete", questTurnInCheckbox, -8)
 
-local deleteCheckbox = CreateOptionCheckbox("AutoConfirmDeleteCheckbox", "Auto-fill DELETE confirmation", "autoDelete", questCompleteCheckbox, -8)
 local questDeleteCheckbox = CreateOptionCheckbox("AutoConfirmQuestDeleteCheckbox", "Auto-delete quest items", "autoDeleteQuestItems", deleteCheckbox, -8)
 local equipCheckbox = CreateOptionCheckbox("AutoConfirmEquipCheckbox", "Auto-confirm equipment binding", "autoEquipConfirm", questDeleteCheckbox, -8)
 local enchantCheckbox = CreateOptionCheckbox("AutoConfirmEnchantCheckbox", "Auto-confirm enchant replacement", "autoEnchantReplace", equipCheckbox, -8)
@@ -601,7 +632,9 @@ SlashCmdList["AUTOCONFIRM"] = function(msg)
         print("|cff00ff00AutoConfirm Status:|r")
         print("  Auto-loot BoP: " .. (settings.autoLoot and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Auto-confirm abandon quest: " .. (settings.autoAbandonQuest and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-        print("  Auto-confirm quest complete: " .. (settings.autoQuestComplete and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		print("  Auto-accept quests: " .. (settings.autoQuestAccept and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+		print("  Auto-complete/turn-in quests: " .. (settings.autoQuestTurnIn and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+
         print("  Auto-delete: " .. (settings.autoDelete and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Auto-delete quest items: " .. (settings.autoDeleteQuestItems and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Auto-confirm equip: " .. (settings.autoEquipConfirm and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
