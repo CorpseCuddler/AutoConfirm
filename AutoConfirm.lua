@@ -4,15 +4,17 @@ local frame = CreateFrame("Frame")
 -- Settings
 local defaultSettings = {
     autoLoot = false,
+    autoQuestAccept = false,
+    autoQuestTurnIn = false,
     autoAbandonQuest = false,
-    autoQuestComplete = false,
     autoDelete = false,
     autoDeleteQuestItems = false,
     autoEquipConfirm = false,
     autoEnchantReplace = false,
     autoPartyInvite = false,
-    partyInviteFriendsOnly = false
+    partyInviteFriendsOnly = false,
 }
+
 local settings
 local function InitializeSavedVariables()
     if type(AutoConfirmDB) ~= "table" then
@@ -38,11 +40,40 @@ frame:RegisterEvent("EQUIP_BIND_CONFIRM")
 frame:RegisterEvent("AUTOEQUIP_BIND_CONFIRM")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGOUT")
+frame:RegisterEvent("QUEST_DETAIL")
+frame:RegisterEvent("QUEST_PROGRESS")
+frame:RegisterEvent("QUEST_COMPLETE")
+frame:RegisterEvent("GOSSIP_SHOW")
+
+
 
 local questDeletePopups = {
     DELETE_QUEST_ITEM = true,
     DELETE_QUEST_ITEM_CONFIRM = true
 }
+
+local function FindPopupByWhich(which)
+    for i = 1, 4 do
+        local dlg = _G["StaticPopup"..i]
+        if dlg and dlg:IsShown() and dlg.which == which then
+            return dlg
+        end
+    end
+    return nil
+end
+
+local function ClickPopupAccept(which)
+    local dlg = FindPopupByWhich(which)
+    if not dlg then return false end
+
+    local btn1 = _G[dlg:GetName() .. "Button1"]
+    if btn1 and btn1:IsEnabled() then
+        btn1:Click()
+        return true
+    end
+    return false
+end
+
 -- Auto-fill DELETE confirmation and click accept
 local function AutoFillDelete(which, isEnabled, confirmText)
     if not isEnabled then
@@ -86,47 +117,87 @@ local function IsFriendByName(name)
     end
     return false
 end
+local function FindPopupByWhich(which)
+    for i = 1, 4 do
+        local dlg = _G["StaticPopup" .. i]
+        if dlg and dlg:IsShown() and dlg.which == which then
+            return dlg, i
+        end
+    end
+    return nil, nil
+end
+
+local function ClickPopupAccept(which)
+    local dlg = FindPopupByWhich(which)
+    if not dlg then return false end
+    local btn1 = _G[dlg:GetName() .. "Button1"]
+    if btn1 and btn1:IsEnabled() then
+        btn1:Click()
+        return true
+    end
+    return false
+end
+
+local function GetPartyInviterName()
+    local dlg = FindPopupByWhich("PARTY_INVITE")
+    if not dlg then return nil end
+
+    -- Best case: server stores it here
+    if type(dlg.data) == "string" and dlg.data ~= "" then return dlg.data end
+    if type(dlg.data2) == "string" and dlg.data2 ~= "" then return dlg.data2 end
+
+    -- Fallback: parse from the visible text "X invites you to a group."
+    local textRegion = _G[dlg:GetName() .. "Text"]
+    local text = textRegion and textRegion:GetText()
+    if type(text) == "string" then
+        local name = text:match("^([^ ]+) invites you to")
+        return name
+    end
+
+    return nil
+end
+
+
 local function AutoConfirmStaticPopup(which)
     if which == "EQUIP_BIND" or which == "EQUIP_BIND_CONFIRM" or which == "AUTOEQUIP_BIND_CONFIRM" then
-        if settings.autoEquipConfirm and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
-            StaticPopup1Button1:Click()
+        if settings.autoEquipConfirm then
+            ClickPopupAccept(which)
         end
         return
     end
+
     if which == "REPLACE_ENCHANT" or which == "CONFIRM_ENCHANT_REPLACE" then
-        if settings.autoEnchantReplace and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
-            StaticPopup1Button1:Click()
+        if settings.autoEnchantReplace then
+            ClickPopupAccept(which)
         end
         return
     end
+
     if which == "ABANDON_QUEST" then
-        if settings.autoAbandonQuest and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
-            StaticPopup1Button1:Click()
+        if settings.autoAbandonQuest then
+            ClickPopupAccept(which)
         end
         return
     end
-    if which == "QUEST_COMPLETE" then
-        if settings.autoQuestComplete and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
-            StaticPopup1Button1:Click()
-        end
-        return
-    end
+
     if which == "PARTY_INVITE" then
-        if not settings.autoPartyInvite then
+    if not settings.autoPartyInvite then
+        return
+    end
+
+    if settings.partyInviteFriendsOnly then
+        local inviterName = GetPartyInviterName()
+        if not inviterName or not IsFriendByName(inviterName) then
             return
         end
-        if settings.partyInviteFriendsOnly then
-            local dialog = StaticPopup1
-            local inviterName = dialog and (dialog.data or dialog.data2)
-            if not IsFriendByName(inviterName) then
-                return
-            end
-        end
-        if StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
-            StaticPopup1Button1:Click()
-        end
     end
+
+    ClickPopupAccept("PARTY_INVITE")
+    return
+	end
+
 end
+
 local function AutoConfirmEnchantReplace()
     if not settings.autoEnchantReplace then
         return
@@ -155,45 +226,150 @@ local function AutoConfirmEquipBind(...)
         StaticPopup1Button1:Click()
     end
 end
-frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "PLAYER_LOGOUT" then
-        AutoConfirmDB = AutoConfirmDB or {}
-        AutoConfirmDB.__test = (AutoConfirmDB.__test or 0) + 1
-        DEFAULT_CHAT_FRAME:AddMessage("|cff00ff00AutoConfirm:|r PLAYER_LOGOUT fired, test=" .. AutoConfirmDB.__test)
-        return
+
+local function AutoQuest_Accept()
+    if not settings.autoQuestAccept then return end
+    if AcceptQuest then AcceptQuest() end
+end
+
+local function AutoQuest_Progress()
+    if not settings.autoQuestTurnIn then return end
+    if IsQuestCompletable and IsQuestCompletable() then
+        if CompleteQuest then CompleteQuest() end
+    end
+end
+
+local function AutoQuest_Complete()
+    if not settings.autoQuestTurnIn then return end
+
+    local choices = (GetNumQuestChoices and GetNumQuestChoices()) or 0
+    if choices > 1 then
+        return -- don't auto-select among multiple rewards
     end
 
+    if GetQuestReward then
+        GetQuestReward(1)
+    end
+end
+
+-- Gossip-based accept/turn-in (common on private servers)
+local function AutoQuest_Gossip()
+    -- Turn-in (active quests) first
+    if settings.autoQuestTurnIn and GetNumGossipActiveQuests and SelectGossipActiveQuest then
+        local n = GetNumGossipActiveQuests()
+        if n == 1 then
+            -- WotLK returns: title, level, isTrivial, isComplete, isLegendary, isIgnored
+            local _, _, _, isComplete = GetGossipActiveQuests()
+            if isComplete == 1 then
+                SelectGossipActiveQuest(1)
+                return
+            end
+        end
+    end
+
+    -- Accept (available quests)
+    if settings.autoQuestAccept and GetNumGossipAvailableQuests and SelectGossipAvailableQuest then
+        local n = GetNumGossipAvailableQuests()
+        if n == 1 then
+            SelectGossipAvailableQuest(1)
+            return
+        end
+    end
+end
+
+
+
+
+frame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
     if event == "ADDON_LOADED" then
-        local loadedAddon = ...
-        if loadedAddon == addonName then
+        if arg1 == addonName then
             InitializeSavedVariables()
         end
         return
     end
+
+    if not settings then
+        return
+    end
+
+    if event == "QUEST_DETAIL" then
+        AutoQuest_Accept()
+        return
+    elseif event == "QUEST_PROGRESS" then
+        AutoQuest_Progress()
+        return
+    elseif event == "QUEST_COMPLETE" then
+        AutoQuest_Complete()
+        return
+    elseif event == "GOSSIP_SHOW" then
+        AutoQuest_Gossip()
+        return
+    end
+
     if event == "LOOT_BIND_CONFIRM" then
         if settings.autoLoot then
-            local slot = ...
-            ConfirmLootSlot(slot)
+            local slot = arg1
+            if ConfirmLootSlot and slot then ConfirmLootSlot(slot) end
+            if LootSlot and slot then LootSlot(slot) end
         end
+        return
     elseif event == "CONFIRM_ENCHANT_REPLACE" then
         AutoConfirmEnchantReplace()
+        return
     elseif event == "EQUIP_BIND_CONFIRM" then
-        AutoConfirmEquipBind(...)
+        AutoConfirmEquipBind(arg1, arg2, arg3, arg4)
+        return
     elseif event == "AUTOEQUIP_BIND_CONFIRM" then
-        AutoConfirmEquipBind(...)
+        AutoConfirmEquipBind(arg1, arg2, arg3, arg4)
+        return
     end
 end)
+
+
+
 -- Hook into StaticPopup to auto-fill delete text and click
-hooksecurefunc("StaticPopup_Show", function(which)
+local lastPartyInviter
+
+hooksecurefunc("StaticPopup_Show", function(which, text_arg1, text_arg2, data)
+    if which == "LOOT_BIND" then
+        if settings and settings.autoLoot then
+            -- On some clients, 'data' is the loot slot index. Confirm if available.
+            if type(data) == "number" and ConfirmLootSlot then
+                ConfirmLootSlot(data)
+            end
+
+            -- Click the OK button on whatever StaticPopup is showing LOOT_BIND
+            local f = CreateFrame("Frame")
+			f:SetScript("OnUpdate", function(self)
+				self:SetScript("OnUpdate", nil)
+				self:Hide()
+				ClickPopupAccept("LOOT_BIND")
+			end)
+        end
+        return
+    end
+
+
     if which == "DELETE_GOOD_ITEM" then
         AutoFillDelete(which, settings.autoDelete, DELETE_ITEM_CONFIRM_STRING)
-    elseif questDeletePopups[which] then
+        return
+    end
+
+    if questDeletePopups[which] then
         local confirmText = _G.DELETE_QUEST_ITEM_CONFIRM_STRING or _G.DELETE_ITEM_CONFIRM_STRING or "DELETE"
         AutoFillDelete(which, settings.autoDeleteQuestItems, confirmText)
-    else
-        AutoConfirmStaticPopup(which)
+        return
     end
+
+    if which == "PARTY_INVITE" then
+        AutoConfirmStaticPopup(which)
+        return
+    end
+
+    AutoConfirmStaticPopup(which)
 end)
+
+
 local optionsPanel = CreateFrame("Frame", "AutoConfirmOptions", UIParent)
 optionsPanel.name = "AutoConfirm"
 local function CreateOptionCheckbox(name, label, settingKey, anchor, offsetY)
@@ -220,7 +396,9 @@ description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 description:SetText("Configure automatic confirmations and deletions.")
 local lootCheckbox = CreateOptionCheckbox("AutoConfirmLootCheckbox", "Auto-confirm soulbound loot", "autoLoot", description, -12)
 local abandonQuestCheckbox = CreateOptionCheckbox("AutoConfirmAbandonQuestCheckbox", "Auto-confirm abandon quest", "autoAbandonQuest", lootCheckbox, -8)
-local questCompleteCheckbox = CreateOptionCheckbox("AutoConfirmQuestCompleteCheckbox", "Auto-confirm quest complete", "autoQuestComplete", abandonQuestCheckbox, -8)
+local questAcceptCheckbox = CreateOptionCheckbox("AutoConfirmQuestAcceptCheckbox", "Auto-accept quests", "autoQuestAccept", abandonQuestCheckbox, -8)
+local questTurnInCheckbox = CreateOptionCheckbox("AutoConfirmQuestTurnInCheckbox", "Auto-complete/turn-in quests", "autoQuestTurnIn", questAcceptCheckbox, -8)
+
 local deleteCheckbox = CreateOptionCheckbox("AutoConfirmDeleteCheckbox", "Auto-fill DELETE confirmation", "autoDelete", questCompleteCheckbox, -8)
 local questDeleteCheckbox = CreateOptionCheckbox("AutoConfirmQuestDeleteCheckbox", "Auto-delete quest items", "autoDeleteQuestItems", deleteCheckbox, -8)
 local equipCheckbox = CreateOptionCheckbox("AutoConfirmEquipCheckbox", "Auto-confirm equipment binding", "autoEquipConfirm", questDeleteCheckbox, -8)
@@ -233,7 +411,9 @@ local function RefreshOptionsPanel()
     end
     lootCheckbox:SetChecked(settings.autoLoot)
     abandonQuestCheckbox:SetChecked(settings.autoAbandonQuest)
-    questCompleteCheckbox:SetChecked(settings.autoQuestComplete)
+	questAcceptCheckbox:SetChecked(settings.autoQuestAccept)
+	questTurnInCheckbox:SetChecked(settings.autoQuestTurnIn)
+
     deleteCheckbox:SetChecked(settings.autoDelete)
     questDeleteCheckbox:SetChecked(settings.autoDeleteQuestItems)
     equipCheckbox:SetChecked(settings.autoEquipConfirm)
@@ -340,8 +520,12 @@ uiFrame.inset:SetBackdropColor(0, 0, 0, 0.35)
 		CreateRowCheckbox("AutoConfirmUI_AutoAbandon", "Auto-confirm abandon quest", "autoAbandonQuest", leftX, y)
 		y = y - rowStep
 		-- Quest complete
-		CreateRowCheckbox("AutoConfirmUI_AutoComplete", "Auto-confirm quest complete", "autoQuestComplete", leftX, y)
+		CreateRowCheckbox("AutoConfirmUI_AutoQuestAccept", "Auto-accept quests", "autoQuestAccept", leftX, y)
 		y = y - rowStep
+
+		CreateRowCheckbox("AutoConfirmUI_AutoQuestTurnIn", "Auto-complete/turn-in quests", "autoQuestTurnIn", leftX, y)
+		y = y - rowStep
+
 		-- DELETE confirm (FIXED KEY)
 		CreateRowCheckbox("AutoConfirmUI_AutoDelete", "Auto-fill DELETE confirmation", "autoDelete", leftX, y)
 		y = y - rowStep
@@ -406,9 +590,13 @@ SlashCmdList["AUTOCONFIRM"] = function(msg)
     elseif msg == "abandon" then
         settings.autoAbandonQuest = not settings.autoAbandonQuest
         print("|cff00ff00AutoConfirm:|r Auto-confirm abandon quest: " .. (settings.autoAbandonQuest and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-    elseif msg == "complete" then
-        settings.autoQuestComplete = not settings.autoQuestComplete
-        print("|cff00ff00AutoConfirm:|r Auto-confirm quest complete: " .. (settings.autoQuestComplete and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+	elseif msg == "questaccept" then
+		settings.autoQuestAccept = not settings.autoQuestAccept
+		print("|cff00ff00AutoConfirm:|r Auto-accept quests: " .. (settings.autoQuestAccept and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+	elseif msg == "questturnin" then
+		settings.autoQuestTurnIn = not settings.autoQuestTurnIn
+		print("|cff00ff00AutoConfirm:|r Auto turn-in quests: " .. (settings.autoQuestTurnIn and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
+
     elseif msg == "party" then
         settings.autoPartyInvite = not settings.autoPartyInvite
         print("|cff00ff00AutoConfirm:|r Auto-accept party invites: " .. (settings.autoPartyInvite and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
@@ -426,23 +614,22 @@ SlashCmdList["AUTOCONFIRM"] = function(msg)
         print("  Auto-confirm enchant replace: " .. (settings.autoEnchantReplace and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Auto-accept party invites: " .. (settings.autoPartyInvite and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
         print("  Party invites friends only: " .. (settings.partyInviteFriendsOnly and "|cff00ff00ON|r" or "|cffff0000OFF|r"))
-        print("  Supported delete popups: DELETE_GOOD_ITEM, DELETE_QUEST_ITEM, DELETE_QUEST_ITEM_CONFIRM")
-        print("  Supported equip popups: EQUIP_BIND, EQUIP_BIND_CONFIRM, AUTOEQUIP_BIND_CONFIRM")
-        print("  Supported enchant popups: REPLACE_ENCHANT, CONFIRM_ENCHANT_REPLACE")
-        print("  Supported quest popups: ABANDON_QUEST, QUEST_COMPLETE")
-        print("  Supported party popups: PARTY_INVITE")
+
     else
         print("|cff00ff00AutoConfirm Commands:|r")
         print("  /ac loot - Toggle auto-confirm BoP loot")
         print("  /ac abandon - Toggle auto-confirm abandon quest")
-        print("  /ac complete - Toggle auto-confirm quest complete")
         print("  /ac delete - Toggle auto-delete items")
         print("  /ac equip - Toggle auto-confirm equipment binding")
         print("  /ac enchant - Toggle auto-confirm enchant replacement")
         print("  /ac party - Toggle auto-accept party invites")
         print("  /ac partyfriends - Toggle party invites friends only")
         print("  /ac status - Show current settings")
+		print("  /ac questaccept - Toggle auto-accept quests")
+		print("  /ac questturnin - Toggle auto-complete/turn-in quests")
+
     end
+
     RefreshOptionsPanel()
 end
 print(addonName .. " loaded - Type /ac to open the UI, or /ac status")
