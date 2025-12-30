@@ -3,6 +3,9 @@ local addonName = "AutoConfirm"
 local frame = CreateFrame("Frame")
 local _autoLootRunning = false
 local _autoLootQueued = false
+local _gossipAvailableLastCount = 0
+local _gossipAvailableAttempt = 0
+local _gossipAvailableLastTime = 0
 
 
 -- Settings
@@ -285,10 +288,28 @@ local function AutoQuest_Gossip()
     -- Accept (available quests)
     if settings.autoQuestAccept and GetNumGossipAvailableQuests and SelectGossipAvailableQuest then
         local n = GetNumGossipAvailableQuests()
-        if n == 1 then
-            SelectGossipAvailableQuest(1)
+        if n <= 0 then
+            _gossipAvailableLastCount = 0
+            _gossipAvailableAttempt = 0
+            _gossipAvailableLastTime = 0
             return
         end
+
+        local now = GetTime and GetTime() or 0
+        if n ~= _gossipAvailableLastCount or (now - _gossipAvailableLastTime) > 2 then
+            _gossipAvailableAttempt = 0
+        end
+
+        if _gossipAvailableAttempt >= n then
+            return
+        end
+
+        local index = _gossipAvailableAttempt + 1
+        _gossipAvailableAttempt = _gossipAvailableAttempt + 1
+        _gossipAvailableLastCount = n
+        _gossipAvailableLastTime = now
+        SelectGossipAvailableQuest(index)
+        return
     end
 end
 
@@ -660,4 +681,3 @@ SlashCmdList["AUTOCONFIRM"] = function(msg)
     RefreshOptionsPanel()
 end
 print(addonName .. " loaded - Type /ac to open the UI, or /ac status")
-
