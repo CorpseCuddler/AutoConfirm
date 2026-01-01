@@ -6,6 +6,8 @@ local _autoLootQueued = false
 local _gossipAvailableLastCount = 0
 local _gossipAvailableAttempt = 0
 local _gossipAvailableLastTime = 0
+local _gossipActiveLastSelectTime = 0
+local _gossipActiveLastSelectIndex = nil
 
 
 -- Settings
@@ -277,44 +279,19 @@ local function AutoQuest_Gossip()
         local n = GetNumGossipActiveQuests()
         if n > 0 and GetGossipActiveQuests then
             local questData = { GetGossipActiveQuests() }
-            local completedIndexes = {}
             local fieldsPerQuest = 6
             for i = 1, n do
                 local isComplete = questData[(i - 1) * fieldsPerQuest + 4]
                 if isComplete == 1 then
-                    table.insert(completedIndexes, i)
-                end
-            end
-
-            if #completedIndexes > 0 then
-                local expectedCount = n
-                local function ContinueQueue(position)
-                    if not GossipFrame or not GossipFrame:IsShown() then
+                    local now = GetTime and GetTime() or 0
+                    if _gossipActiveLastSelectIndex == i and (now - _gossipActiveLastSelectTime) < 0.2 then
                         return
                     end
-                    if GetNumGossipActiveQuests() ~= expectedCount then
-                        return
-                    end
-                    local index = completedIndexes[position]
-                    if not index then
-                        return
-                    end
-                    SelectGossipActiveQuest(index)
-                    if completedIndexes[position + 1] then
-                        C_Timer.After(0.25, function()
-                            ContinueQueue(position + 1)
-                        end)
-                    end
+                    _gossipActiveLastSelectIndex = i
+                    _gossipActiveLastSelectTime = now
+                    SelectGossipActiveQuest(i)
+                    return
                 end
-
-                if C_Timer and C_Timer.After then
-                    ContinueQueue(1)
-                else
-                    for _, index in ipairs(completedIndexes) do
-                        SelectGossipActiveQuest(index)
-                    end
-                end
-                return
             end
         end
     end
