@@ -8,6 +8,7 @@ local _gossipAvailableAttempt = 0
 local _gossipAvailableLastTime = 0
 local _gossipActiveLastSelectTime = 0
 local _gossipActiveLastSelectIndex = nil
+local _gossipActiveLastCount = 0
 
 
 -- Settings
@@ -284,11 +285,13 @@ local function AutoQuest_Gossip()
                 local isComplete = questData[(i - 1) * fieldsPerQuest + 4]
                 if isComplete == 1 then
                     local now = GetTime and GetTime() or 0
-                    if _gossipActiveLastSelectIndex == i and (now - _gossipActiveLastSelectTime) < 0.2 then
+                    if _gossipActiveLastSelectIndex == i and (now - _gossipActiveLastSelectTime) < 0.2
+                        and _gossipActiveLastCount == n then
                         return
                     end
                     _gossipActiveLastSelectIndex = i
                     _gossipActiveLastSelectTime = now
+                    _gossipActiveLastCount = n
                     SelectGossipActiveQuest(i)
                     return
                 end
