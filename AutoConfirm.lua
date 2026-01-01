@@ -275,11 +275,45 @@ local function AutoQuest_Gossip()
     -- Turn-in (active quests) first
     if settings.autoQuestTurnIn and GetNumGossipActiveQuests and SelectGossipActiveQuest then
         local n = GetNumGossipActiveQuests()
-        if n == 1 then
-            -- WotLK returns: title, level, isTrivial, isComplete, isLegendary, isIgnored
-            local _, _, _, isComplete = GetGossipActiveQuests()
-            if isComplete == 1 then
-                SelectGossipActiveQuest(1)
+        if n > 0 and GetGossipActiveQuests then
+            local questData = { GetGossipActiveQuests() }
+            local completedIndexes = {}
+            local fieldsPerQuest = 6
+            for i = 1, n do
+                local isComplete = questData[(i - 1) * fieldsPerQuest + 4]
+                if isComplete == 1 then
+                    table.insert(completedIndexes, i)
+                end
+            end
+
+            if #completedIndexes > 0 then
+                local expectedCount = n
+                local function ContinueQueue(position)
+                    if not GossipFrame or not GossipFrame:IsShown() then
+                        return
+                    end
+                    if GetNumGossipActiveQuests() ~= expectedCount then
+                        return
+                    end
+                    local index = completedIndexes[position]
+                    if not index then
+                        return
+                    end
+                    SelectGossipActiveQuest(index)
+                    if completedIndexes[position + 1] then
+                        C_Timer.After(0.25, function()
+                            ContinueQueue(position + 1)
+                        end)
+                    end
+                end
+
+                if C_Timer and C_Timer.After then
+                    ContinueQueue(1)
+                else
+                    for _, index in ipairs(completedIndexes) do
+                        SelectGossipActiveQuest(index)
+                    end
+                end
                 return
             end
         end
