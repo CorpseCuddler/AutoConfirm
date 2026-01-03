@@ -10,10 +10,16 @@ local function InitializeSavedVariables()
     end
     AutoConfirmDB.alwaysConfirm = AutoConfirmDB.alwaysConfirm or {}
     AutoConfirmDB.alwaysDeny = AutoConfirmDB.alwaysDeny or {}
+    if AutoConfirmDB.autoAcceptQuests == nil then
+        AutoConfirmDB.autoAcceptQuests = false
+    end
     settings = AutoConfirmDB
 end
 
 frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("GOSSIP_SHOW")
+frame:RegisterEvent("QUEST_GREETING")
+frame:RegisterEvent("QUEST_DETAIL")
 
 local function FindPopupByWhich(which)
     for i = 1, 4 do
@@ -66,6 +72,29 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         if arg1 == addonName then
             InitializeSavedVariables()
         end
+        return
+    end
+
+    if not settings or not settings.autoAcceptQuests then
+        return
+    end
+
+    if event == "GOSSIP_SHOW" then
+        for i = 1, GetNumGossipAvailableQuests() do
+            SelectGossipAvailableQuest(i)
+        end
+        return
+    end
+
+    if event == "QUEST_GREETING" then
+        for i = 1, GetNumAvailableQuests() do
+            SelectAvailableQuest(i)
+        end
+        return
+    end
+
+    if event == "QUEST_DETAIL" then
+        AcceptQuest()
     end
 end)
 
@@ -153,6 +182,16 @@ local description = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontHighl
 description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 description:SetText("Right-click popup buttons to save always-confirm or always-deny rules.")
 
+local autoAcceptCheckbox = CreateFrame("CheckButton", "AutoConfirmAutoAcceptQuests", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+autoAcceptCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -8)
+autoAcceptCheckbox.Text:SetText("Auto-accept available quests")
+autoAcceptCheckbox:SetScript("OnClick", function(self)
+    if not settings then
+        return
+    end
+    settings.autoAcceptQuests = self:GetChecked() == true
+end)
+
 local function CreateListPanel(name, label, anchor, offsetX)
     local panel = CreateFrame("Frame", name, optionsPanel)
     panel:SetSize(260, 380)
@@ -167,8 +206,8 @@ local function CreateListPanel(name, label, anchor, offsetX)
     return panel
 end
 
-local confirmPanel = CreateListPanel("AutoConfirmConfirmPanel", "Always Confirm", description, 0)
-local denyPanel = CreateListPanel("AutoConfirmDenyPanel", "Always Deny", description, 280)
+local confirmPanel = CreateListPanel("AutoConfirmConfirmPanel", "Always Confirm", autoAcceptCheckbox, 0)
+local denyPanel = CreateListPanel("AutoConfirmDenyPanel", "Always Deny", autoAcceptCheckbox, 280)
 
 local function ClearPanelEntries(panel)
     for _, entry in ipairs(panel.entries) do
@@ -210,6 +249,8 @@ function AutoConfirmUI_Refresh()
     if not settings then
         return
     end
+
+    autoAcceptCheckbox:SetChecked(settings.autoAcceptQuests)
 
     ClearPanelEntries(confirmPanel)
     ClearPanelEntries(denyPanel)
