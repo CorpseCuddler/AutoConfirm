@@ -35,6 +35,35 @@ local function FindPopupByWhich(which)
     return nil
 end
 
+local function IsLootPopup(popupWhich)
+    if popupWhich == "CONFIRM_LOOT_SLOT" or popupWhich == "LOOT_BIND" then
+        return true
+    end
+    local dialog = StaticPopupDialogs and StaticPopupDialogs[popupWhich]
+    if not dialog then
+        return false
+    end
+    if dialog.OnAccept == ConfirmLootSlot then
+        return true
+    end
+    local confirmDialog = StaticPopupDialogs.CONFIRM_LOOT_SLOT
+    local lootBindDialog = StaticPopupDialogs.LOOT_BIND
+    if confirmDialog and dialog.OnAccept == confirmDialog.OnAccept then
+        return true
+    end
+    if lootBindDialog and dialog.OnAccept == lootBindDialog.OnAccept then
+        return true
+    end
+    return false
+end
+
+local function NormalizePopupWhich(which, dlg)
+    if IsLootPopup(which) then
+        return "LOOT_BIND_ANY"
+    end
+    return which
+end
+
 local function ClickPopupButton(dlg, buttonIndex)
     if not dlg then
         return false
@@ -147,28 +176,6 @@ hooksecurefunc("StaticPopup_Show", function(which)
         return
     end
 
-    local function IsLootPopup(popupWhich)
-        if popupWhich == "CONFIRM_LOOT_SLOT" or popupWhich == "LOOT_BIND" then
-            return true
-        end
-        local dialog = StaticPopupDialogs and StaticPopupDialogs[popupWhich]
-        if not dialog then
-            return false
-        end
-        if dialog.OnAccept == ConfirmLootSlot then
-            return true
-        end
-        local confirmDialog = StaticPopupDialogs.CONFIRM_LOOT_SLOT
-        local lootBindDialog = StaticPopupDialogs.LOOT_BIND
-        if confirmDialog and dialog.OnAccept == confirmDialog.OnAccept then
-            return true
-        end
-        if lootBindDialog and dialog.OnAccept == lootBindDialog.OnAccept then
-            return true
-        end
-        return false
-    end
-
     local function GetLootSlot(dialogFrame)
         if not dialogFrame then
             return nil
@@ -187,12 +194,14 @@ hooksecurefunc("StaticPopup_Show", function(which)
         return
     end
 
-    if ShouldAutoConfirm(which) then
+    local normalizedWhich = NormalizePopupWhich(which, dlg)
+
+    if ShouldAutoConfirm(normalizedWhich) then
         ClickPopupButton(dlg, 1)
         return
     end
 
-    if ShouldAutoDeny(which) then
+    if ShouldAutoDeny(normalizedWhich) then
         ClickPopupButton(dlg, 2)
     end
 end)
@@ -211,17 +220,19 @@ local function OnPopupButtonClick(self, button)
         return
     end
 
+    local normalizedWhich = NormalizePopupWhich(dlg.which, dlg)
+
     if self == _G[dlg:GetName() .. "Button1"] then
-        SaveSelection(dlg.which, settings.alwaysConfirm, settings.alwaysDeny)
+        SaveSelection(normalizedWhich, settings.alwaysConfirm, settings.alwaysDeny)
         AutoConfirmUI_Refresh()
-        print(addonName .. ": Always confirm saved for " .. dlg.which)
+        print(addonName .. ": Always confirm saved for " .. normalizedWhich)
         return
     end
 
     if self == _G[dlg:GetName() .. "Button2"] then
-        SaveSelection(dlg.which, settings.alwaysDeny, settings.alwaysConfirm)
+        SaveSelection(normalizedWhich, settings.alwaysDeny, settings.alwaysConfirm)
         AutoConfirmUI_Refresh()
-        print(addonName .. ": Always deny saved for " .. dlg.which)
+        print(addonName .. ": Always deny saved for " .. normalizedWhich)
     end
 end
 
@@ -439,14 +450,14 @@ local function ClearPanelEntries(panel)
     panel.entries = {}
 end
 
-local function CreateEntry(panel, which, yOffset, onDelete)
+local function CreateEntry(panel, which, labelText, yOffset, onDelete)
     local entry = CreateFrame("Frame", nil, panel)
     entry:SetSize(240, 20)
     entry:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, yOffset)
 
     local label = entry:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     label:SetPoint("LEFT", entry, "LEFT", 0, 0)
-    label:SetText(which)
+    label:SetText(labelText or which)
 
     local deleteButton = CreateFrame("Button", nil, entry, "UIPanelCloseButton")
     deleteButton:SetSize(18, 18)
@@ -467,6 +478,13 @@ local function SortedKeys(list)
     return keys
 end
 
+local function GetDisplayLabel(which)
+    if which == "LOOT_BIND_ANY" then
+        return "Loot Bind (all)"
+    end
+    return which
+end
+
 function AutoConfirmUI_Refresh()
     if not settings then
         return
@@ -483,7 +501,7 @@ function AutoConfirmUI_Refresh()
 
     local y = -32
     for _, which in ipairs(confirmKeys) do
-        CreateEntry(confirmPanel, which, y, function(entryWhich)
+        CreateEntry(confirmPanel, which, GetDisplayLabel(which), y, function(entryWhich)
             settings.alwaysConfirm[entryWhich] = nil
             AutoConfirmUI_Refresh()
         end)
@@ -492,7 +510,7 @@ function AutoConfirmUI_Refresh()
 
     y = -32
     for _, which in ipairs(denyKeys) do
-        CreateEntry(denyPanel, which, y, function(entryWhich)
+        CreateEntry(denyPanel, which, GetDisplayLabel(which), y, function(entryWhich)
             settings.alwaysDeny[entryWhich] = nil
             AutoConfirmUI_Refresh()
         end)
