@@ -314,12 +314,9 @@ description:SetText("Right-click popup buttons to save always-confirm or always-
 
 local autoAcceptCheckbox = CreateFrame("CheckButton", "AutoConfirmAutoAcceptQuests", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
 autoAcceptCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -8)
-local autoAcceptLabel = _G[autoAcceptCheckbox:GetName() .. "Text"]
+local autoAcceptLabel = autoAcceptCheckbox.Text or _G[autoAcceptCheckbox:GetName() .. "Text"]
 if not autoAcceptLabel and autoAcceptCheckbox.text then
     autoAcceptLabel = autoAcceptCheckbox.text
-end
-if not autoAcceptLabel and autoAcceptCheckbox.GetFontString then
-    autoAcceptLabel = autoAcceptCheckbox:GetFontString()
 end
 if autoAcceptLabel and autoAcceptLabel.SetText then
     autoAcceptLabel:SetText("Auto-accept available quests")
