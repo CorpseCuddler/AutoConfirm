@@ -190,8 +190,11 @@ hooksecurefunc("StaticPopup_Show", function(which)
         return data
     end
 
+    local normalizedWhich = NormalizePopupWhich(which, dlg)
     if IsLootPopup(which) and not GetLootSlot(dlg) then
-        return
+        if not (ShouldAutoConfirm(normalizedWhich) or ShouldAutoDeny(normalizedWhich)) then
+            return
+        end
     end
 
     local normalizedWhich = NormalizePopupWhich(which, dlg)
