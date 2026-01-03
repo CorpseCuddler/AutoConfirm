@@ -13,6 +13,9 @@ local function InitializeSavedVariables()
     if AutoConfirmDB.autoAcceptQuests == nil then
         AutoConfirmDB.autoAcceptQuests = false
     end
+    if AutoConfirmDB.autoTurnInQuests == nil then
+        AutoConfirmDB.autoTurnInQuests = false
+    end
     settings = AutoConfirmDB
 end
 
@@ -328,6 +331,22 @@ autoAcceptCheckbox:SetScript("OnClick", function(self)
     settings.autoAcceptQuests = self:GetChecked() == true
 end)
 
+local autoTurnInCheckbox = CreateFrame("CheckButton", "AutoConfirmAutoTurnInQuests", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+autoTurnInCheckbox:SetPoint("TOPLEFT", autoAcceptCheckbox, "BOTTOMLEFT", 0, -6)
+local autoTurnInLabel = autoTurnInCheckbox.Text or _G[autoTurnInCheckbox:GetName() .. "Text"]
+if not autoTurnInLabel and autoTurnInCheckbox.text then
+    autoTurnInLabel = autoTurnInCheckbox.text
+end
+if autoTurnInLabel and autoTurnInLabel.SetText then
+    autoTurnInLabel:SetText("Auto turn-in completed quests")
+end
+autoTurnInCheckbox:SetScript("OnClick", function(self)
+    if not settings then
+        return
+    end
+    settings.autoTurnInQuests = self:GetChecked() == true
+end)
+
 local function CreateListPanel(name, label, anchor, offsetX)
     local panel = CreateFrame("Frame", name, optionsPanel)
     panel:SetSize(260, 380)
@@ -342,8 +361,8 @@ local function CreateListPanel(name, label, anchor, offsetX)
     return panel
 end
 
-local confirmPanel = CreateListPanel("AutoConfirmConfirmPanel", "Always Confirm", autoAcceptCheckbox, 0)
-local denyPanel = CreateListPanel("AutoConfirmDenyPanel", "Always Deny", autoAcceptCheckbox, 280)
+local confirmPanel = CreateListPanel("AutoConfirmConfirmPanel", "Always Confirm", autoTurnInCheckbox, 0)
+local denyPanel = CreateListPanel("AutoConfirmDenyPanel", "Always Deny", autoTurnInCheckbox, 280)
 
 local function ClearPanelEntries(panel)
     for _, entry in ipairs(panel.entries) do
@@ -387,6 +406,7 @@ function AutoConfirmUI_Refresh()
     end
 
     autoAcceptCheckbox:SetChecked(settings.autoAcceptQuests)
+    autoTurnInCheckbox:SetChecked(settings.autoTurnInQuests)
 
     ClearPanelEntries(confirmPanel)
     ClearPanelEntries(denyPanel)
