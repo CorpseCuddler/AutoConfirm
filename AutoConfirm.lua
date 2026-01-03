@@ -147,6 +147,46 @@ hooksecurefunc("StaticPopup_Show", function(which)
         return
     end
 
+    local function IsLootPopup(popupWhich)
+        if popupWhich == "CONFIRM_LOOT_SLOT" or popupWhich == "LOOT_BIND" then
+            return true
+        end
+        local dialog = StaticPopupDialogs and StaticPopupDialogs[popupWhich]
+        if not dialog then
+            return false
+        end
+        if dialog.OnAccept == ConfirmLootSlot then
+            return true
+        end
+        local confirmDialog = StaticPopupDialogs.CONFIRM_LOOT_SLOT
+        local lootBindDialog = StaticPopupDialogs.LOOT_BIND
+        if confirmDialog and dialog.OnAccept == confirmDialog.OnAccept then
+            return true
+        end
+        if lootBindDialog and dialog.OnAccept == lootBindDialog.OnAccept then
+            return true
+        end
+        return false
+    end
+
+    local function GetLootSlot(dialogFrame)
+        if not dialogFrame then
+            return nil
+        end
+        local data = dialogFrame.data
+        if type(data) == "table" then
+            data = data.slot
+        end
+        if type(data) ~= "number" or data <= 0 then
+            return nil
+        end
+        return data
+    end
+
+    if IsLootPopup(which) and not GetLootSlot(dlg) then
+        return
+    end
+
     if ShouldAutoConfirm(which) then
         ClickPopupButton(dlg, 1)
         return
