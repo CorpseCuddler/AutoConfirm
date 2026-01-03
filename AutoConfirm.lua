@@ -20,6 +20,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("GOSSIP_SHOW")
 frame:RegisterEvent("QUEST_GREETING")
 frame:RegisterEvent("QUEST_DETAIL")
+frame:RegisterEvent("QUEST_COMPLETE")
 
 local function FindPopupByWhich(which)
     for i = 1, 4 do
@@ -95,6 +96,14 @@ frame:SetScript("OnEvent", function(_, event, arg1)
 
     if event == "QUEST_DETAIL" then
         AcceptQuest()
+        return
+    end
+
+    if event == "QUEST_COMPLETE" then
+        if GetNumQuestChoices() == 0 then
+            GetQuestReward(1)
+        end
+        return
     end
 end)
 
