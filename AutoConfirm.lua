@@ -87,8 +87,8 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
-    local autoAccept = settings.autoAcceptQuests
-    local autoTurnIn = settings.autoTurnInQuests
+    local autoAccept = settings.autoAcceptQuests == true
+    local autoTurnIn = settings.autoTurnInQuests == true
 
     if event == "GOSSIP_SHOW" then
         if autoTurnIn then
