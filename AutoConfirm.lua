@@ -170,6 +170,127 @@ end
 
 HookPopupButtons()
 
+-- Quest reward vendor value indicator
+local vendorOverlayFrame = CreateFrame("Frame")
+vendorOverlayFrame:RegisterEvent("QUEST_COMPLETE")
+vendorOverlayFrame:RegisterEvent("QUEST_FINISHED")
+
+local pendingVendorUpdate = false
+local UpdateBestVendorChoice
+
+local function GetRewardButtonIcon(button)
+    if not button then
+        return nil
+    end
+    return button.icon or button.Icon or button.IconTexture
+end
+
+local function EnsureBestVendorIcon(button, itemIcon)
+    if not button or not itemIcon then
+        return nil
+    end
+
+    if not button.AutoConfirmBestVendorIcon then
+        local icon = button:CreateTexture(nil, "OVERLAY")
+        icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
+        icon:SetSize(16, 16)
+        icon:SetPoint("BOTTOMLEFT", itemIcon, "BOTTOMLEFT", 0, 0)
+        button.AutoConfirmBestVendorIcon = icon
+    end
+
+    return button.AutoConfirmBestVendorIcon
+end
+
+local function ClearBestVendorIcons()
+    local numChoices = GetNumQuestChoices() or 0
+    local maxButtons = numChoices
+
+    if QuestInfoRewardsFrame and QuestInfoRewardsFrame.RewardButtons then
+        maxButtons = math.max(maxButtons, #QuestInfoRewardsFrame.RewardButtons)
+    end
+
+    for i = 1, maxButtons do
+        local button = QuestInfo_GetRewardButton("choice", i)
+        if button and button.AutoConfirmBestVendorIcon then
+            button.AutoConfirmBestVendorIcon:Hide()
+        end
+    end
+end
+
+local function ScheduleVendorRetry()
+    if pendingVendorUpdate then
+        return
+    end
+    pendingVendorUpdate = true
+    C_Timer.After(0.2, function()
+        pendingVendorUpdate = false
+        UpdateBestVendorChoice()
+    end)
+end
+
+function UpdateBestVendorChoice()
+    local numChoices = GetNumQuestChoices() or 0
+    if numChoices <= 1 then
+        ClearBestVendorIcons()
+        return
+    end
+
+    local bestIndex
+    local bestValue
+
+    for i = 1, numChoices do
+        local _, _, numItems, _, _, itemID = GetQuestItemInfo("choice", i)
+        if not itemID then
+            ScheduleVendorRetry()
+            return
+        end
+
+        local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemID)
+        if not sellPrice then
+            ScheduleVendorRetry()
+            return
+        end
+
+        local totalValue = sellPrice * (numItems or 1)
+        if not bestValue or totalValue > bestValue then
+            bestValue = totalValue
+            bestIndex = i
+        end
+    end
+
+    if not bestIndex then
+        ClearBestVendorIcons()
+        return
+    end
+
+    for i = 1, numChoices do
+        local button = QuestInfo_GetRewardButton("choice", i)
+        if button then
+            local itemIcon = GetRewardButtonIcon(button)
+            local coinIcon = EnsureBestVendorIcon(button, itemIcon)
+            if coinIcon then
+                if i == bestIndex then
+                    coinIcon:Show()
+                else
+                    coinIcon:Hide()
+                end
+            end
+        end
+    end
+end
+
+vendorOverlayFrame:SetScript("OnEvent", function(_, event)
+    if event == "QUEST_COMPLETE" then
+        UpdateBestVendorChoice()
+    elseif event == "QUEST_FINISHED" then
+        ClearBestVendorIcons()
+    end
+end)
+
+if QuestInfoRewardsFrame then
+    QuestInfoRewardsFrame:HookScript("OnHide", ClearBestVendorIcons)
+end
+
 -- UI
 local optionsPanel = CreateFrame("Frame", "AutoConfirmOptions", UIParent)
 optionsPanel.name = "AutoConfirm"
