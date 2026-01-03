@@ -83,6 +83,10 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
+    if (event == "GOSSIP_SHOW" or event == "QUEST_GREETING" or event == "QUEST_DETAIL" or event == "QUEST_COMPLETE") and IsShiftKeyDown() then
+        return
+    end
+
     local autoAccept = settings.autoAcceptQuests
     local autoTurnIn = settings.autoTurnInQuests
 
@@ -334,8 +338,12 @@ local description = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontHighl
 description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
 description:SetText("Right-click popup buttons to save always-confirm or always-deny rules.")
 
+local shiftOverride = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+shiftOverride:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -6)
+shiftOverride:SetText("Hold Shift while opening quest dialogs to bypass auto-accept and auto turn-in.")
+
 local autoAcceptCheckbox = CreateFrame("CheckButton", "AutoConfirmAutoAcceptQuests", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
-autoAcceptCheckbox:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -8)
+autoAcceptCheckbox:SetPoint("TOPLEFT", shiftOverride, "BOTTOMLEFT", 0, -8)
 local autoAcceptLabel = autoAcceptCheckbox.Text or _G[autoAcceptCheckbox:GetName() .. "Text"]
 if not autoAcceptLabel and autoAcceptCheckbox.text then
     autoAcceptLabel = autoAcceptCheckbox.text
