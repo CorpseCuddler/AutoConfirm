@@ -197,6 +197,8 @@ hooksecurefunc("StaticPopup_Show", function(which)
         end
     end
 
+    local normalizedWhich = NormalizePopupWhich(which, dlg)
+
     if ShouldAutoConfirm(normalizedWhich) then
         ClickPopupButton(dlg, 1)
         return
