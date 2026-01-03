@@ -79,31 +79,50 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
-    if not settings or not settings.autoAcceptQuests then
+    if not settings then
         return
     end
 
+    local autoAccept = settings.autoAcceptQuests
+    local autoTurnIn = settings.autoTurnInQuests
+
     if event == "GOSSIP_SHOW" then
-        for i = 1, GetNumGossipAvailableQuests() do
-            SelectGossipAvailableQuest(i)
+        if autoTurnIn then
+            for i = 1, GetNumGossipActiveQuests() do
+                SelectGossipActiveQuest(i)
+            end
+        end
+        if autoAccept then
+            for i = 1, GetNumGossipAvailableQuests() do
+                SelectGossipAvailableQuest(i)
+            end
         end
         return
     end
 
     if event == "QUEST_GREETING" then
-        for i = 1, GetNumAvailableQuests() do
-            SelectAvailableQuest(i)
+        if autoTurnIn then
+            for i = 1, GetNumActiveQuests() do
+                SelectActiveQuest(i)
+            end
+        end
+        if autoAccept then
+            for i = 1, GetNumAvailableQuests() do
+                SelectAvailableQuest(i)
+            end
         end
         return
     end
 
     if event == "QUEST_DETAIL" then
-        AcceptQuest()
+        if autoAccept then
+            AcceptQuest()
+        end
         return
     end
 
     if event == "QUEST_COMPLETE" then
-        if GetNumQuestChoices() == 0 then
+        if autoTurnIn and GetNumQuestChoices() == 0 then
             GetQuestReward(1)
         end
         return
