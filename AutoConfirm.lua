@@ -1,3 +1,117 @@
+
+local function GetLootSlotSafe(dlg)
+    if not dlg then return nil end
+    local data = dlg.data
+    if type(data) == "table" then data = data.slot end
+    if type(data) ~= "number" or data <= 0 then return nil end
+    return data
+end
+
+
+local function GetPopupText(dlg)
+    if not dlg then return nil end
+
+    -- dlg.text is typically a FontString on 3.3.5a StaticPopup frames
+    if dlg.text and dlg.text.GetText then
+        local t = dlg.text:GetText()
+        if type(t) == "string" and t ~= "" then
+            return t
+        end
+    elseif type(dlg.text) == "string" and dlg.text ~= "" then
+        return dlg.text
+    end
+
+    local fs = _G[dlg:GetName() .. "Text"]
+    if fs and fs.GetText then
+        return fs:GetText()
+    end
+    return nil
+end
+
+local function ExtractConfirmToken(popupText)
+    if type(popupText) ~= "string" then return nil end
+    -- Common patterns like: Type "DELETE" into the field to confirm.
+    local token = popupText:match('Type%s+"([^"]+)"')
+    if token then return token end
+    token = popupText:match("Type%s+'([^']+)'")
+    if token then return token end
+    token = popupText:match('Type%s+“([^”]+)”')
+    return token
+end
+
+local function FindPopupEditBox(dlg)
+    if not dlg then return nil end
+
+    local eb = dlg.editBox
+    if eb and eb.SetText then
+        return eb
+    end
+
+    eb = _G[dlg:GetName() .. "EditBox"]
+    if eb and eb.SetText then
+        return eb
+    end
+
+    if dlg.GetChildren then
+        local kids = { dlg:GetChildren() }
+        for _, child in ipairs(kids) do
+            if child and child.GetObjectType and child:GetObjectType() == "EditBox" then
+                return child
+            end
+            -- Some templates don't report object type; fall back to method presence
+            if child and child.SetText and child.GetText and child.HighlightText then
+                return child
+            end
+        end
+    end
+
+    return nil
+end
+
+
+local function AutoFillDeleteConfirmText(dlg, rawWhich, noQueue)
+    if not settings or not settings.autoDeleteGoodItems then
+        return true
+    end
+    if not dlg then return end
+    local editBox = FindPopupEditBox(dlg)
+    if not (editBox and editBox.SetText) then
+        return false
+    end
+
+    -- Only fill if it's currently empty (avoid clobbering user input)
+    local current = (editBox.GetText and editBox:GetText()) or ""
+    if current and current:gsub("%s+", "") ~= "" then
+        return true
+    end
+
+    local token = nil
+    if rawWhich == "DELETE_GOOD_ITEM" then
+        token = _G.DELETE_ITEM_CONFIRM_STRING or "DELETE"
+    end
+    if not token then
+        token = ExtractConfirmToken(GetPopupText(dlg))
+    end
+    if not token or token == "" then
+        if not noQueue and dlg and dlg.IsShown and dlg:IsShown() then
+            pendingDeleteFills[dlg] = { which = rawWhich, wait = 0, delay = 0.05, timeout = 2.0 }
+            pendingClickTicker:Show()
+        end
+        return false
+    end
+
+if token and token ~= "" then
+        editBox:SetText(token)
+        if editBox.HighlightText then
+            editBox:HighlightText()
+        end
+        return true
+    end
+    return false
+end
+
+
+
 -- AutoConfirm.lua
 local addonName = "AutoConfirm"
 local frame = CreateFrame("Frame")
@@ -16,6 +130,9 @@ local function InitializeSavedVariables()
     if AutoConfirmDB.autoTurnInQuests == nil then
         AutoConfirmDB.autoTurnInQuests = false
     end
+    if AutoConfirmDB.autoDeleteGoodItems == nil then
+        AutoConfirmDB.autoDeleteGoodItems = false
+    end
     settings = AutoConfirmDB
 end
 
@@ -23,6 +140,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("GOSSIP_SHOW")
 frame:RegisterEvent("QUEST_GREETING")
 frame:RegisterEvent("QUEST_DETAIL")
+frame:RegisterEvent("QUEST_PROGRESS")
 frame:RegisterEvent("QUEST_COMPLETE")
 
 local function FindPopupByWhich(which)
@@ -64,9 +182,63 @@ local function NormalizePopupWhich(which, dlg)
     return which
 end
 
-local function ClickPopupButton(dlg, buttonIndex)
-    if not dlg then
-        return false
+local pendingPopupClicks = pendingPopupClicks or {}
+local pendingDeleteFills = pendingDeleteFills or {}
+local pendingClickTicker = pendingClickTicker or CreateFrame("Frame")
+pendingClickTicker:Hide()
+pendingClickTicker:SetScript("OnUpdate", function(_, elapsed)
+    -- Process any queued popup clicks. This is mainly needed for CONFIRM_LOOT_SLOT,
+    -- where dlg.data (the slot index) can be populated slightly after StaticPopup_Show.
+    local any = false
+
+    -- Process pending delete-confirm autofills (wait until popup text is populated)
+    for dlg, info in pairs(pendingDeleteFills) do
+        any = true
+        if not dlg or not dlg.IsShown or not dlg:IsShown() then
+            pendingDeleteFills[dlg] = nil
+        else
+            info.wait = info.wait + elapsed
+            if info.wait >= info.delay then
+                info.wait = 0
+                info.timeout = (info.timeout or 2.0) - info.delay
+                local ok = AutoFillDeleteConfirmText(dlg, info.which, true)
+                if ok or (info.timeout <= 0) then
+                    pendingDeleteFills[dlg] = nil
+                end
+            end
+        end
+    end
+
+    for dlg, info in pairs(pendingPopupClicks) do
+        any = true
+        if not dlg or not dlg.IsShown or not dlg:IsShown() then
+            pendingPopupClicks[dlg] = nil
+        else
+            info.wait = info.wait + elapsed
+            if info.wait >= info.delay then
+                -- For loot-slot confirmation popups, only click once dlg.data (slot) is available.
+                if not info.needsSlot or GetLootSlotSafe(dlg) then
+                    pendingPopupClicks[dlg] = nil
+                    local button = _G[dlg:GetName() .. "Button" .. info.buttonIndex]
+                    if button and button:IsEnabled() then
+                        button:Click()
+                    end
+                end
+            end
+        end
+    end
+    if not any then
+        pendingClickTicker:Hide()
+    end
+end)
+
+local function QueuePopupClick(dlg, buttonIndex)
+    if not dlg then return false end
+    local needsSlot = IsLootPopup and IsLootPopup(dlg.which)
+    if needsSlot and not GetLootSlotSafe(dlg) then
+        pendingPopupClicks[dlg] = { buttonIndex = buttonIndex, wait = 0, delay = 0.05, needsSlot = true }
+        pendingClickTicker:Show()
+        return true
     end
     local button = _G[dlg:GetName() .. "Button" .. buttonIndex]
     if button and button:IsEnabled() then
@@ -92,13 +264,30 @@ local function SaveSelection(which, listToAdd, listToRemove)
     RemoveFromList(listToRemove, which)
 end
 
-local function ShouldAutoConfirm(which)
-    return settings.alwaysConfirm[which]
+-- Some popups (notably loot binding) can vary across clients/servers. We treat
+-- certain popups as equivalent by checking both the raw and normalized keys.
+local function ListHas(list, which, normalizedWhich)
+    if not list or not which then
+        return false
+    end
+    if list[which] then
+        return true
+    end
+    if normalizedWhich and list[normalizedWhich] then
+        return true
+    end
+    return false
 end
 
-local function ShouldAutoDeny(which)
-    return settings.alwaysDeny[which]
+local function ShouldAutoConfirm(which, normalizedWhich)
+    return ListHas(settings.alwaysConfirm, which, normalizedWhich)
 end
+
+local function ShouldAutoDeny(which, normalizedWhich)
+    return ListHas(settings.alwaysDeny, which, normalizedWhich)
+end
+
+-- (legacy single-key helpers removed; use the normalized-aware variants above)
 
 frame:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
@@ -154,6 +343,14 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
+
+    if event == "QUEST_PROGRESS" then
+        if autoTurnIn and IsQuestCompletable() then
+            CompleteQuest()
+        end
+        return
+    end
+
     if event == "QUEST_COMPLETE" then
         if autoTurnIn and GetNumQuestChoices() == 0 then
             GetQuestReward(1)
@@ -176,6 +373,9 @@ hooksecurefunc("StaticPopup_Show", function(which)
         return
     end
 
+
+    AutoFillDeleteConfirmText(dlg, which)
+
     local function GetLootSlot(dialogFrame)
         if not dialogFrame then
             return nil
@@ -192,20 +392,18 @@ hooksecurefunc("StaticPopup_Show", function(which)
 
     local normalizedWhich = NormalizePopupWhich(which, dlg)
     if IsLootPopup(which) and not GetLootSlot(dlg) then
-        if not (ShouldAutoConfirm(normalizedWhich) or ShouldAutoDeny(normalizedWhich)) then
+        if not (ShouldAutoConfirm(which, normalizedWhich) or ShouldAutoDeny(which, normalizedWhich)) then
             return
         end
     end
 
-    local normalizedWhich = NormalizePopupWhich(which, dlg)
-
-    if ShouldAutoConfirm(normalizedWhich) then
-        ClickPopupButton(dlg, 1)
+    if ShouldAutoConfirm(which, normalizedWhich) then
+        QueuePopupClick(dlg, 1)
         return
     end
 
-    if ShouldAutoDeny(normalizedWhich) then
-        ClickPopupButton(dlg, 2)
+    if ShouldAutoDeny(which, normalizedWhich) then
+        QueuePopupClick(dlg, 2)
     end
 end)
 
@@ -223,10 +421,18 @@ local function OnPopupButtonClick(self, button)
         return
     end
 
-    local normalizedWhich = NormalizePopupWhich(dlg.which, dlg)
+    local rawWhich = dlg.which
+    local normalizedWhich = NormalizePopupWhich(rawWhich, dlg)
+    -- Auto-fill handled on popup show (StaticPopup_Show hook)
+
 
     if self == _G[dlg:GetName() .. "Button1"] then
+        -- Store loot confirmations under a single normalized key to avoid duplicate UI entries.
         SaveSelection(normalizedWhich, settings.alwaysConfirm, settings.alwaysDeny)
+        if normalizedWhich ~= rawWhich then
+            RemoveFromList(settings.alwaysConfirm, rawWhich)
+            RemoveFromList(settings.alwaysDeny, rawWhich)
+        end
         AutoConfirmUI_Refresh()
         print(addonName .. ": Always confirm saved for " .. normalizedWhich)
         return
@@ -234,6 +440,10 @@ local function OnPopupButtonClick(self, button)
 
     if self == _G[dlg:GetName() .. "Button2"] then
         SaveSelection(normalizedWhich, settings.alwaysDeny, settings.alwaysConfirm)
+        if normalizedWhich ~= rawWhich then
+            RemoveFromList(settings.alwaysConfirm, rawWhich)
+            RemoveFromList(settings.alwaysDeny, rawWhich)
+        end
         AutoConfirmUI_Refresh()
         print(addonName .. ": Always deny saved for " .. normalizedWhich)
     end
@@ -267,27 +477,107 @@ vendorOverlayFrame:RegisterEvent("QUEST_FINISHED")
 local pendingVendorUpdate = false
 local UpdateBestVendorChoice
 
+
 local function GetRewardButtonIcon(button)
     if not button then
         return nil
     end
-    return button.icon or button.Icon or button.IconTexture
+
+    -- Common fields across clients/templates
+    local icon = button.icon or button.Icon or button.IconTexture
+    if icon then
+        return icon
+    end
+
+    -- 3.3.5a QuestInfoItemTemplate commonly uses a named region: <ButtonName>IconTexture
+    if button.GetName then
+        local name = button:GetName()
+        if name then
+            icon = _G[name .. "IconTexture"] or _G[name .. "Icon"] or _G[name .. "IconTex"]
+            if icon then
+                return icon
+            end
+        end
+    end
+
+    -- Last fallback: sometimes the normal texture is the icon
+    if button.GetNormalTexture then
+        icon = button:GetNormalTexture()
+        if icon then
+            return icon
+        end
+    end
+
+    return nil
 end
 
+
 local function EnsureBestVendorIcon(button, itemIcon)
-    if not button or not itemIcon then
+    if not button then
         return nil
     end
 
     if not button.AutoConfirmBestVendorIcon then
         local icon = button:CreateTexture(nil, "OVERLAY")
-        icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
-        icon:SetSize(16, 16)
-        icon:SetPoint("BOTTOMLEFT", itemIcon, "BOTTOMLEFT", 0, 0)
+        icon:SetTexture([[Interface\Buttons\UI-GroupLoot-Coin-Up]])
+        icon:SetSize(18, 18)
+        icon:SetDrawLayer("OVERLAY", 7)
+
+        -- Prefer anchoring to the actual item icon region, otherwise anchor to the button.
+        if itemIcon and icon.SetPoint then
+            icon:SetPoint("TOPRIGHT", itemIcon, "TOPRIGHT", -2, -2)
+        else
+            icon:SetPoint("TOPRIGHT", button, "TOPRIGHT", -4, -4)
+        end
+
         button.AutoConfirmBestVendorIcon = icon
+    else
+        -- If we created it before without an icon region, and we now have one, re-anchor.
+        if itemIcon and button.AutoConfirmBestVendorIcon.ClearAllPoints then
+            button.AutoConfirmBestVendorIcon:ClearAllPoints()
+            button.AutoConfirmBestVendorIcon:SetPoint("TOPRIGHT", itemIcon, "TOPRIGHT", -2, -2)
+        end
     end
 
     return button.AutoConfirmBestVendorIcon
+end
+
+
+-- 3.3.5a compatibility: some clients don't provide QuestInfo_GetRewardButton
+local function AutoConfirm_GetRewardButton(rewardType, index)
+    -- Prefer Blizzard's helper if available
+    if type(QuestInfo_GetRewardButton) == "function" then
+        return QuestInfo_GetRewardButton(rewardType, index)
+    end
+
+    -- Newer templates often store buttons here
+    if QuestInfoRewardsFrame and QuestInfoRewardsFrame.RewardButtons then
+        return QuestInfoRewardsFrame.RewardButtons[index]
+    end
+
+    -- Fallback globals (varies by client/template)
+    local candidates = {
+        _G["QuestInfoReward" .. index],
+        _G["QuestInfoRewardsFrameReward" .. index],
+        _G["QuestInfoItem" .. index],
+    }
+    for _, btn in ipairs(candidates) do
+        if btn then
+            return btn
+        end
+    end
+
+    -- Last resort: scan children for matching ID (3.3.5a-safe)
+    if QuestInfoRewardsFrame and QuestInfoRewardsFrame.GetChildren then
+        local kids = { QuestInfoRewardsFrame:GetChildren() }
+        for _, child in ipairs(kids) do
+            if child and child.GetID and child:GetID() == index then
+                return child
+            end
+        end
+    end
+
+    return nil
 end
 
 local function ClearBestVendorIcons()
@@ -299,7 +589,7 @@ local function ClearBestVendorIcons()
     end
 
     for i = 1, maxButtons do
-        local button = QuestInfo_GetRewardButton("choice", i)
+        local button = AutoConfirm_GetRewardButton("choice", i)
         if button and button.AutoConfirmBestVendorIcon then
             button.AutoConfirmBestVendorIcon:Hide()
         end
@@ -328,7 +618,17 @@ function UpdateBestVendorChoice()
     local bestValue
 
     for i = 1, numChoices do
-        local _, _, numItems, _, _, itemID = GetQuestItemInfo("choice", i)
+        local _, _, numItems = GetQuestItemInfo("choice", i)
+
+        -- 3.3.5a compatibility: GetQuestItemInfo doesn't always return itemID.
+        local itemID = select(6, GetQuestItemInfo("choice", i))
+        if not itemID then
+            local link = GetQuestItemLink("choice", i)
+            if link then
+                itemID = tonumber(string.match(link, "item:(%d+)"))
+            end
+        end
+
         if not itemID then
             ScheduleVendorRetry()
             return
@@ -353,7 +653,7 @@ function UpdateBestVendorChoice()
     end
 
     for i = 1, numChoices do
-        local button = QuestInfo_GetRewardButton("choice", i)
+        local button = AutoConfirm_GetRewardButton("choice", i)
         if button then
             local itemIcon = GetRewardButtonIcon(button)
             local coinIcon = EnsureBestVendorIcon(button, itemIcon)
@@ -409,7 +709,7 @@ autoAcceptCheckbox:SetScript("OnClick", function(self)
     if not settings then
         return
     end
-    settings.autoAcceptQuests = self:GetChecked() == true
+    settings.autoAcceptQuests = not not self:GetChecked()
 end)
 
 local autoTurnInCheckbox = CreateFrame("CheckButton", "AutoConfirmAutoTurnInQuests", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
@@ -425,7 +725,25 @@ autoTurnInCheckbox:SetScript("OnClick", function(self)
     if not settings then
         return
     end
-    settings.autoTurnInQuests = self:GetChecked() == true
+    settings.autoTurnInQuests = not not self:GetChecked()
+end)
+
+
+local autoDeleteGoodItemsCheckbox = CreateFrame("CheckButton", "AutoConfirmAutoDeleteGoodItems", optionsPanel, "InterfaceOptionsCheckButtonTemplate")
+autoDeleteGoodItemsCheckbox:SetPoint("TOPLEFT", autoTurnInCheckbox, "BOTTOMLEFT", 0, -6)
+local autoDeleteGoodItemsLabel = autoDeleteGoodItemsCheckbox.Text or _G[autoDeleteGoodItemsCheckbox:GetName() .. "Text"]
+if not autoDeleteGoodItemsLabel and autoDeleteGoodItemsCheckbox.text then
+    autoDeleteGoodItemsLabel = autoDeleteGoodItemsCheckbox.text
+end
+if autoDeleteGoodItemsLabel and autoDeleteGoodItemsLabel.SetText then
+    autoDeleteGoodItemsLabel:SetText("Auto-fill DELETE when deleting high-quality items")
+end
+autoDeleteGoodItemsCheckbox.tooltipText = "When enabled, the addon will auto-fill the confirmation text (e.g. DELETE) for the 'This item is high quality' delete confirmation popup. It will NOT auto-click."
+autoDeleteGoodItemsCheckbox:SetScript("OnClick", function(self)
+    if not settings then
+        return
+    end
+    settings.autoDeleteGoodItems = not not self:GetChecked()
 end)
 
 local function CreateListPanel(name, label, anchor, offsetX)
@@ -485,6 +803,9 @@ local function GetDisplayLabel(which)
     if which == "LOOT_BIND_ANY" then
         return "Loot Bind (all)"
     end
+    if which == "LOOT_BIND" then
+        return "Loot Bind"
+    end
     return which
 end
 
@@ -496,6 +817,9 @@ function AutoConfirmUI_Refresh()
     autoAcceptCheckbox:SetChecked(settings.autoAcceptQuests)
     autoTurnInCheckbox:SetChecked(settings.autoTurnInQuests)
 
+    if autoDeleteGoodItemsCheckbox then
+        autoDeleteGoodItemsCheckbox:SetChecked(settings.autoDeleteGoodItems)
+    end
     ClearPanelEntries(confirmPanel)
     ClearPanelEntries(denyPanel)
 
