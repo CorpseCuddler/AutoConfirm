@@ -63,6 +63,26 @@ local function IsShiftConditionMet(requireShift)
     return not requireShift or IsShiftKeyDown()
 end
 
+local function GetLootSlotFromDialog(dialog)
+    if not dialog then
+        return nil
+    end
+
+    if type(dialog.data) == "number" then
+        return dialog.data
+    end
+
+    if type(dialog.data) == "table" and type(dialog.data.slot) == "number" then
+        return dialog.data.slot
+    end
+
+    if type(dialog.data2) == "number" then
+        return dialog.data2
+    end
+
+    return nil
+end
+
 -- Auto-fill DELETE confirmation and click accept
 local function AutoFillDelete(which, isEnabled, requireShift, confirmText)
     if not isEnabled then
@@ -111,8 +131,13 @@ end
 
 local function AutoConfirmStaticPopup(which)
     if which == "LOOT_BIND" or which == "LOOT_BIND_CONFIRM" then
-        if settings.autoLoot and IsShiftConditionMet(settings.requireShiftAutoLoot) and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
-            StaticPopup1Button1:Click()
+        if settings.autoLoot and IsShiftConditionMet(settings.requireShiftAutoLoot) then
+            local slot = GetLootSlotFromDialog(StaticPopup1)
+            if slot and ConfirmLootSlot then
+                ConfirmLootSlot(slot)
+            elseif slot and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
+                StaticPopup1Button1:Click()
+            end
         end
         return
     end
@@ -223,7 +248,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
     if event == "LOOT_BIND_CONFIRM" then
         if settings.autoLoot and IsShiftConditionMet(settings.requireShiftAutoLoot) then
             local slot = ...
-            ConfirmLootSlot(slot)
+            if slot and ConfirmLootSlot then
+                ConfirmLootSlot(slot)
+            end
         end
     elseif event == "CONFIRM_ENCHANT_REPLACE" then
         AutoConfirmEnchantReplace()
