@@ -110,6 +110,13 @@ local function IsFriendByName(name)
 end
 
 local function AutoConfirmStaticPopup(which)
+    if which == "LOOT_BIND" or which == "LOOT_BIND_CONFIRM" then
+        if settings.autoLoot and IsShiftConditionMet(settings.requireShiftAutoLoot) and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
+            StaticPopup1Button1:Click()
+        end
+        return
+    end
+
     if which == "EQUIP_BIND" or which == "EQUIP_BIND_CONFIRM" or which == "AUTOEQUIP_BIND_CONFIRM" then
         if settings.autoEquipConfirm and IsShiftConditionMet(settings.requireShiftAutoEquipConfirm) and StaticPopup1Button1 and StaticPopup1Button1:IsEnabled() then
             StaticPopup1Button1:Click()
